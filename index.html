@@ -1,0 +1,132 @@
+<pre><code>
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+</code></pre>
+
+<style>
+  pre code { white-space: pre; display: block; font-family: monospace; }
+</style>
+local RunService = game:GetService("RunService")
+if not RunService:IsStudio() then
+	return
+end
+ 
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+ 
+local SETTINGS = {
+	EspKey = Enum.KeyCode.E,   -- bật/tắt ESP
+	AimKey = Enum.KeyCode.Q,   -- bật/tắt tự ngắm đầu
+	ModeKey = Enum.KeyCode.R,  -- đổi giữa ngắm mượt và ngắm giật (snap)
+	FovPixels = 250,           -- chỉ khóa bot nằm trong vòng này quanh tâm màn hình
+	Smoothness = 0.18,         -- 0 đến 1, càng lớn càng nhanh (chỉ áp dụng ở chế độ mượt)
+}
+ 
+local espOn, aimOn, snapMode = false, false, false
+local highlights = {} -- [model] = Highlight
+ 
+local function isBot(inst)
+	return inst:IsA("Model") and inst:GetAttribute("IsBot") == true
+end
+ 
+----------------------------------------------------------------
+-- ESP: viền sáng nhìn xuyên vật cản
+----------------------------------------------------------------
+local function addEsp(model)
+	if highlights[model] then return end
+	local h = Instance.new("Highlight")
+	h.Name = "CheatSimEsp"
+	h.FillColor = Color3.fromRGB(255, 60, 60)
+	h.FillTransparency = 0.6
+	h.OutlineColor = Color3.new(1, 1, 1)
+	h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	h.Adornee = model
+	h.Parent = model
+	highlights[model] = h
+end
+ 
+local function clearEsp()
+	for _, h in pairs(highlights) do
+		h:Destroy()
+	end
+	table.clear(highlights)
+end
+ 
+task.spawn(function()
+	while true do
+		if espOn then
+			for model, h in pairs(highlights) do
+				if not model.Parent then
+					h:Destroy()
+					highlights[model] = nil
+				end
+			end
+			for _, child in ipairs(Workspace:GetChildren()) do
+				if isBot(child) then
+					addEsp(child)
+				end
+			end
+		end
+		task.wait(0.25)
+	end
+end)
+ 
+----------------------------------------------------------------
+-- Tự ngắm đầu bot gần tâm màn hình nhất
+----------------------------------------------------------------
+local function closestHead()
+	local camera = Workspace.CurrentCamera
+	if not camera then return nil end
+ 
+	local viewport = camera.ViewportSize
+	local center = Vector2.new(viewport.X / 2, viewport.Y / 2)
+	local bestHead, bestDist
+ 
+	for _, child in ipairs(Workspace:GetChildren()) do
+		if isBot(child) then
+			local head = child:FindFirstChild("Head")
+			if head then
+				local pos, onScreen = camera:WorldToViewportPoint(head.Position)
+				if onScreen then
+					local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
+					if dist <= SETTINGS.FovPixels and (not bestDist or dist < bestDist) then
+						bestHead, bestDist = head, dist
+					end
+				end
+			end
+		end
+	end
+	return bestHead
+end
+ 
+RunService:BindToRenderStep("CheatSimAim", Enum.RenderPriority.Camera.Value + 1, function()
+	if not aimOn then return end
+	local camera = Workspace.CurrentCamera
+	local head = camera and closestHead()
+	if not head then return end
+ 
+	local goal = CFrame.lookAt(camera.CFrame.Position, head.Position)
+	camera.CFrame = snapMode and goal or camera.CFrame:Lerp(goal, SETTINGS.Smoothness)
+end)
+ 
+----------------------------------------------------------------
+-- Phím điều khiển
+----------------------------------------------------------------
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+ 
+	if input.KeyCode == SETTINGS.EspKey then
+		espOn = not espOn
+		if not espOn then clearEsp() end
+		print("[CheatSim] ESP:", espOn and "BẬT" or "TẮT")
+	elseif input.KeyCode == SETTINGS.AimKey then
+		aimOn = not aimOn
+		print("[CheatSim] Tự ngắm đầu:", aimOn and "BẬT" or "TẮT")
+	elseif input.KeyCode == SETTINGS.ModeKey then
+		snapMode = not snapMode
+		print("[CheatSim] Chế độ ngắm:", snapMode and "GIẬT (snap)" or "MƯỢT")
+	end
+end)
+ 
+print("[CheatSim] Sẵn sàng. E = ESP, Q = tự ngắm đầu, R = đổi chế độ mượt/giật.")
+ 
